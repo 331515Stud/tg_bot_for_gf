@@ -1,4 +1,7 @@
 import logging
+import asyncio
+import os
+from telegram.ext import Application
 import os
 import tempfile
 import cv2
@@ -228,29 +231,32 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
     if update and update.effective_message:
         await update.effective_message.reply_text("Произошла ошибка. Попробуй снова.")
-
-def main():
+        
+async def main():
     token = "8151004630:AAEs_BD6CpxM3UsVN4dSNru9XJjaxKpUQMY"
     application = Application.builder().token(token).build()
 
     # Добавьте обработчики
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     application.add_handler(CommandHandler("paste", paste))
     application.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file))
     application.add_handler(CallbackQueryHandler(save_file_callback, pattern='^save_(txt|pdf|docx)$'))
     application.add_error_handler(error_handler)
 
-    if os.getenv('RENDER'):
-        render_external_url = os.getenv('RENDER_EXTERNAL_URL')
-        port = int(os.getenv('PORT', 10000))
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=token,
-            webhook_url=f"{render_external_url}/{token}"
-        )
-    else:
-        application.run_polling()
+    port = int(os.getenv('PORT', 10000))
+    webhook_url = f"{os.getenv('RENDER_EXTERNAL_URL')}/{token}"
+
+    await application.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path=token,
+        webhook_url=webhook_url
+    )
+
+    # Бесконечный цикл для поддержания работы
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
