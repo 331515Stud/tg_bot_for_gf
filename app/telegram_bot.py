@@ -1,8 +1,7 @@
 import logging
+import os
 import asyncio
-import os
 from telegram.ext import Application
-import os
 import tempfile
 import cv2
 import numpy as np
@@ -233,30 +232,38 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("Произошла ошибка. Попробуй снова.")
         
 async def main():
+    """Запуск бота с вебхуком."""
     token = "8151004630:AAEs_BD6CpxM3UsVN4dSNru9XJjaxKpUQMY"
     application = Application.builder().token(token).build()
 
-    # Добавьте обработчики
+    # Добавляем обработчики
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     application.add_handler(CommandHandler("paste", paste))
     application.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file))
     application.add_handler(CallbackQueryHandler(save_file_callback, pattern='^save_(txt|pdf|docx)$'))
     application.add_error_handler(error_handler)
 
-    port = int(os.getenv('PORT', 10000))
-    webhook_url = f"{os.getenv('RENDER_EXTERNAL_URL')}/{token}"
-
-    await application.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path=token,
-        webhook_url=webhook_url
-    )
-
-    # Бесконечный цикл для поддержания работы
-    while True:
-        await asyncio.sleep(3600)
+    if os.getenv('RENDER'):
+        port = int(os.getenv('PORT', 10000))
+        webhook_url = f"{os.getenv('RENDER_EXTERNAL_URL')}/{token}"
+        
+        await application.initialize()
+        await application.bot.set_webhook(webhook_url)
+        
+        async with application:
+            await application.start()
+            await application.updater.start_webhook(
+                listen="0.0.0.0",
+                port=port,
+                url_path=token,
+                webhook_url=webhook_url
+            )
+            
+            # Бесконечный цикл для поддержания работы
+            while True:
+                await asyncio.sleep(3600)
+    else:
+        await application.run_polling()
 
 if __name__ == '__main__':
     asyncio.run(main())
