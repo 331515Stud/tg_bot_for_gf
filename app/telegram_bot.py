@@ -230,7 +230,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("Произошла ошибка. Попробуй снова.")
 
 def main():
-    """Run the bot with webhook."""
     token = "8151004630:AAEs_BD6CpxM3UsVN4dSNru9XJjaxKpUQMY"
     application = Application.builder().token(token).build()
 
@@ -241,18 +240,16 @@ def main():
     application.add_handler(CallbackQueryHandler(save_file_callback, pattern='^save_(txt|pdf|docx)$'))
     application.add_error_handler(error_handler)
 
-    # Настройка веб-хука (для Render)
     if os.getenv('RENDER'):
-        # Получите внешний URL вашего сервиса на Render
         render_external_url = os.getenv('RENDER_EXTERNAL_URL')
+        port = int(os.getenv('PORT', 10000))
         application.run_webhook(
             listen="0.0.0.0",
-            port=int(os.getenv('PORT', 10000)),
+            port=port,
             url_path=token,
             webhook_url=f"{render_external_url}/{token}"
         )
     else:
-        # Локальный режим (для отладки)
         application.run_polling()
 
 if __name__ == '__main__':
