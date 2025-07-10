@@ -1,4 +1,4 @@
-FROM python:3.8-slim
+FROM python:3.9-slim
 
 # Установка зависимостей ОС, включая Tesseract и OpenCV
 RUN apt-get update && apt-get install -y \
@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-rus \
     libopencv-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Обновление pip
+RUN pip install --upgrade pip
 
 # Установка рабочей директории
 WORKDIR /app
