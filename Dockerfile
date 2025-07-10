@@ -23,4 +23,4 @@ COPY . .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Команда для запуска бота
-CMD ["python", "telegram_bot.py"]
+CMD ["python", "app/telegram_bot.py"]
