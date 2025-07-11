@@ -1,7 +1,5 @@
 import logging
 import os
-import asyncio
-from telegram.ext import Application
 import tempfile
 import cv2
 import numpy as np
@@ -21,6 +19,9 @@ from telegram.ext import (
     ContextTypes,
 )
 from dotenv import load_dotenv
+import asyncio
+
+# Load environment variables
 load_dotenv()
 
 # Configure logging
@@ -32,14 +33,17 @@ logger = logging.getLogger(__name__)
 # Dictionary to store user data (e.g., extracted text)
 user_data = {}
 
+# Telegram bot token
+BOT_TOKEN = "8151004630:AAEs_BD6CpxM3UsVN4dSNru9XJjaxKpUQMY"
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /start command."""
     await update.message.reply_text(
         "Привет! Я бот для извлечения текста из изображений, PDF и XML файлов.\n"
-        "Отправь мне изображение (PNG, JPG, JPEG, BMP, TIFF), и я сразу извлеку текст.\n"
+        "Отправь мне изображение (PNG, JPG, JPEG, BMP, TIFF) или фото, и я сразу извлеку текст.\n"
         "Также поддерживаются PDF и XML файлы.\n"
         "После извлечения текста ты сможешь сохранить его как TXT, PDF или DOCX.\n"
-        "Команда /paste не поддерживает вставку из буфера обмена в Telegram."
+        "Команда /paste не поддерживается, так как Telegram не позволяет вставку из буфера обмена."
     )
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -61,22 +65,32 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_name = update.message.document.file_name
     else:
         await update.message.reply_text(
-            "Пожалуйста, отправь изображение, PDF или XML файл.")
+            "Пожалуйста, отправь изображение, фото, PDF или XML файл."
+        )
         return
 
-    file_path = await file.download_to_drive()
+    # Download file to a temporary location
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_name)[1]) as temp_file:
+        file_path = temp_file.name
+        await file.download_to_drive(file_path)
 
-    if is_photo or file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
-        await process_image(update, context, file_path, user_id)
-    elif file_name.lower().endswith('.pdf'):
-        await process_pdf(update, context, file_path, user_id)
-    elif file_name.lower().endswith('.xml'):
-        await process_xml(update, context, file_path, user_id)
-    else:
-        await update.message.reply_text(
-            "Пожалуйста, отправь файл в формате изображения (PNG, JPG, JPEG, BMP, TIFF), PDF или XML.")
-
-    os.remove(file_path)  # Clean up the downloaded file
+    try:
+        if is_photo or file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+            await process_image(update, context, file_path, user_id)
+        elif file_name.lower().endswith('.pdf'):
+            await process_pdf(update, context, file_path, user_id)
+        elif file_name.lower().endswith('.xml'):
+            await process_xml(update, context, file_path, user_id)
+        else:
+            await update.message.reply_text(
+                "Неподдерживаемый формат. Отправьте изображение (PNG, JPG, JPEG, BMP, TIFF), PDF или XML."
+            )
+    except Exception as e:
+        logger.error(f"Error processing file for user {user_id}: {str(e)}")
+        await update.message.reply_text(f"Ошибка обработки файла: {str(e)}")
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 async def process_image(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path, user_id):
     """Process an image file or photo and extract text immediately."""
@@ -90,7 +104,8 @@ async def process_image(update: Update, context: ContextTypes.DEFAULT_TYPE, file
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         _, binary = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
         extracted_text = pytesseract.image_to_string(
-            binary, lang='eng+rus',
+            binary,
+            lang='eng+rus',
             config='--oem 3 --psm 6 -c preserve_interword_spaces=1 '
                    'tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzабвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ.,-/ '
         )
@@ -105,6 +120,7 @@ async def process_image(update: Update, context: ContextTypes.DEFAULT_TYPE, file
         else:
             await update.message.reply_text("Текст не обнаружен в изображении.")
     except Exception as e:
+        logger.error(f"Error processing image for user {user_id}: {str(e)}")
         await update.message.reply_text(f"Ошибка обработки изображения: {str(e)}")
 
 async def process_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path, user_id):
@@ -128,27 +144,30 @@ async def process_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
                 base_image = doc.extract_image(xref)
                 image_bytes = base_image["image"]
                 image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
-                if image is not None:
-                    # Extract text immediately from the image
-                    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                    _, binary = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
-                    extracted_text = pytesseract.image_to_string(
-                        binary, lang='eng+rus',
-                        config='--oem 3 --psm 6 -c preserve_interword_spaces=1 '
-                               'tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzабвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ.,-/ '
-                    )
-                    user_data[user_id] = {'extracted_text': extracted_text}
-                    if extracted_text.strip():
-                        await update.message.reply_text(
-                            f"Текст извлечён из изображения в PDF:\n\n{extracted_text[:1000]}...\n\n"
-                            "Выбери формат для сохранения текста.",
-                            reply_markup=get_save_buttons()
-                        )
-                    else:
-                        await update.message.reply_text("Текст не обнаружен в изображении из PDF.")
+                if image is None:
+                    await update.message.reply_text("Не удалось извлечь изображение из PDF.")
                     return
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                _, binary = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+                extracted_text = pytesseract.image_to_string(
+                    binary,
+                    lang='eng+rus',
+                    config='--oem 3 --psm 6 -c preserve_interword_spaces=1 '
+                           'tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzабвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ.,-/ '
+                )
+                user_data[user_id] = {'extracted_text': extracted_text}
+                if extracted_text.strip():
+                    await update.message.reply_text(
+                        f"Текст извлечён из изображения в PDF:\n\n{extracted_text[:1000]}...\n\n"
+                        "Выбери формат для сохранения текста.",
+                        reply_markup=get_save_buttons()
+                    )
+                else:
+                    await update.message.reply_text("Текст не обнаружен в изображении из PDF.")
+                return
         await update.message.reply_text("В PDF не найдено текста или изображений.")
     except Exception as e:
+        logger.error(f"Error processing PDF for user {user_id}: {str(e)}")
         await update.message.reply_text(f"Ошибка обработки PDF: {str(e)}")
 
 async def process_xml(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path, user_id):
@@ -171,6 +190,7 @@ async def process_xml(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
         else:
             await update.message.reply_text("В XML не найдено текста.")
     except Exception as e:
+        logger.error(f"Error processing XML for user {user_id}: {str(e)}")
         await update.message.reply_text(f"Ошибка обработки XML: {str(e)}")
 
 async def paste(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -221,8 +241,9 @@ async def save_file_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 filename=f"extracted_text.{file_type}",
                 caption=f"Файл сохранён как extracted_text.{file_type}"
             )
-            os.remove(temp_file.name)
+        os.remove(temp_file.name)
     except Exception as e:
+        logger.error(f"Error saving file for user {user_id}: {str(e)}")
         await query.message.reply_text(f"Ошибка сохранения файла: {str(e)}")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -230,40 +251,55 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
     if update and update.effective_message:
         await update.effective_message.reply_text("Произошла ошибка. Попробуй снова.")
-        
-async def main():
-    """Запуск бота с вебхуком."""
-    token = "8151004630:AAEs_BD6CpxM3UsVN4dSNru9XJjaxKpUQMY"
-    application = Application.builder().token(token).build()
 
-    # Добавляем обработчики
+async def main():
+    """Run the bot with webhook or polling."""
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("paste", paste))
     application.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file))
     application.add_handler(CallbackQueryHandler(save_file_callback, pattern='^save_(txt|pdf|docx)$'))
     application.add_error_handler(error_handler)
 
-    if os.getenv('RENDER'):
-        port = int(os.getenv('PORT', 10000))
-        webhook_url = f"{os.getenv('RENDER_EXTERNAL_URL')}/{token}"
-        
-        await application.initialize()
-        await application.bot.set_webhook(webhook_url)
-        
-        async with application:
+    try:
+        if os.getenv('RENDER'):
+            port = int(os.getenv('PORT', 10000))
+            webhook_url = f"{os.getenv('RENDER_EXTERNAL_URL')}/{BOT_TOKEN}"
+            await application.initialize()
+            await application.bot.set_webhook(webhook_url)
             await application.start()
             await application.updater.start_webhook(
                 listen="0.0.0.0",
                 port=port,
-                url_path=token,
+                url_path=BOT_TOKEN,
                 webhook_url=webhook_url
             )
-            
-            # Бесконечный цикл для поддержания работы
-            while True:
-                await asyncio.sleep(3600)
-    else:
-        await application.run_polling()
+            await asyncio.Event().wait()  # Keep running until interrupted
+        else:
+            await application.initialize()
+            await application.start()
+            await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+            await asyncio.Event().wait()  # Keep running until interrupted
+    except Exception as e:
+        logger.error(f"Error in main: {str(e)}")
+        raise
+    finally:
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+    except Exception as e:
+        logger.error(f"Error running bot: {str(e)}")
+    finally:
+        if not loop.is_closed():
+            loop.close()
